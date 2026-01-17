@@ -1,7 +1,7 @@
 #!/bin/bash
 
-author=Echohs
-# github=https://github.com/Echohs/xray
+author=EchoHS
+# github=https://github.com/EchoHS/xray
 
 # bash fonts colors
 red='\e[31m'
