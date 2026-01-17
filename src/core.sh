@@ -2,25 +2,33 @@
 
 protocol_list=(
     VMess-TCP
+    VMess-TCP-TLS
     VMess-mKCP
-    # VMess-QUIC
-    # VMess-H2-TLS
+    VMess-QUIC
+    VMess-H2-TLS
     VMess-WS-TLS
     VMess-gRPC-TLS
-    # VLESS-H2-TLS
+    VLESS-TCP
+    VLESS-mKCP
+    VLESS-QUIC
+    VLESS-H2-TLS
     VLESS-WS-TLS
     VLESS-gRPC-TLS
     VLESS-XHTTP-TLS
     VLESS-REALITY
-    # Trojan-H2-TLS
+    VLESS-XTLS-Vision
+    Trojan-TCP-TLS
+    Trojan-H2-TLS
     Trojan-WS-TLS
     Trojan-gRPC-TLS
+    Trojan-XHTTP-TLS
     Shadowsocks
-    # Dokodemo-Door
+    Dokodemo-Door
     VMess-TCP-dynamic-port
     VMess-mKCP-dynamic-port
-    # VMess-QUIC-dynamic-port
+    VMess-QUIC-dynamic-port
     Socks
+    HTTP
 )
 ss_method_list=(
     aes-128-gcm
@@ -879,20 +887,57 @@ add() {
     is_lower=${1,,}
     if [[ $is_lower ]]; then
         case $is_lower in
-        # tcp | kcp | quic | tcpd | kcpd | quicd)
-        tcp | kcp | tcpd | kcpd)
+        # VMess 快捷命令
+        tcp | kcp | tcpd | kcpd | quicd)
             is_new_protocol=VMess-$(sed 's/^K/mK/;s/D$/-dynamic-port/' <<<${is_lower^^})
             ;;
-        # ws | h2 | grpc | vws | vh2 | vgrpc | tws | th2 | tgrpc)
+        quic)
+            is_new_protocol=VMess-QUIC
+            ;;
+        tcptls)
+            is_new_protocol=VMess-TCP-TLS
+            ;;
+        h2)
+            is_new_protocol=VMess-H2-TLS
+            ;;
+        # VLESS 快捷命令
+        vtcp)
+            is_new_protocol=VLESS-TCP
+            ;;
+        vkcp)
+            is_new_protocol=VLESS-mKCP
+            ;;
+        vquic)
+            is_new_protocol=VLESS-QUIC
+            ;;
+        vh2)
+            is_new_protocol=VLESS-H2-TLS
+            ;;
+        xtls | vision)
+            is_new_protocol=VLESS-XTLS-Vision
+            ;;
+        # 通用 TLS 传输 (ws, grpc, xhttp)
         ws | grpc | vws | vgrpc | tws | tgrpc)
             is_new_protocol=$(sed -E "s/^V/VLESS-/;s/^T/Trojan-/;/^(W|H|G)/{s/^/VMess-/};s/G/g/" <<<${is_lower^^})-TLS
             ;;
         xhttp)
             is_new_protocol=VLESS-XHTTP-TLS
             ;;
+        txhttp)
+            is_new_protocol=Trojan-XHTTP-TLS
+            ;;
+        # Trojan 快捷命令
+        ttcp)
+            is_new_protocol=Trojan-TCP-TLS
+            ;;
+        th2)
+            is_new_protocol=Trojan-H2-TLS
+            ;;
+        # REALITY
         r | reality)
             is_new_protocol=VLESS-REALITY
             ;;
+        # 其他协议
         ss)
             is_new_protocol=Shadowsocks
             ;;
@@ -902,9 +947,9 @@ add() {
         socks)
             is_new_protocol=Socks
             ;;
-        # http)
-        #     is_new_protocol=local-$is_lower
-        #     ;;
+        http)
+            is_new_protocol=HTTP
+            ;;
         *)
             for v in ${protocol_list[@]}; do
                 [[ $(grep -E -i "^$is_lower$" <<<$v) ]] && is_new_protocol=$v && break
@@ -924,7 +969,25 @@ add() {
         is_use_host=$2
         is_use_uuid=$3
         is_use_path=$4
-        is_add_opts="[host] [uuid] [/path]"
+        [[ $(grep -i trojan <<<$is_new_protocol) ]] && {
+            is_use_pass=$3
+            is_use_path=$4
+            is_add_opts="[host] [password] [/path]"
+        } || {
+            is_add_opts="[host] [uuid] [/path]"
+        }
+        ;;
+    vless-xtls-vision)
+        is_xtls_vision=1
+        is_use_port=$2
+        is_use_uuid=$3
+        is_add_opts="[port] [uuid]"
+        ;;
+    vless-tcp | vless-mkcp | vless-quic)
+        is_use_port=$2
+        is_use_uuid=$3
+        is_use_header_type=$4
+        is_add_opts="[port] [uuid] [type]"
         ;;
     vmess*)
         is_use_port=$2
@@ -965,7 +1028,8 @@ add() {
         is_use_socks_pass=$4
         is_add_opts="[port] [username] [password]"
         ;;
-    *http)
+    http)
+        is_http=1
         is_use_port=$2
         is_add_opts="[port]"
         ;;
@@ -1277,6 +1341,10 @@ get() {
                 is_server_id_json='settings:{clients:[{id:"'$uuid'",flow:"xtls-rprx-vision"}],decryption:"none"}'
                 is_client_id_json='settings:{vnext:[{address:"'$is_addr'",port:'"$port"',users:[{id:"'$uuid'",encryption:"none",flow:"xtls-rprx-vision"}]}]}'
             fi
+            if [[ $is_xtls_vision ]]; then
+                is_server_id_json='settings:{clients:[{id:"'$uuid'",flow:"xtls-rprx-vision"}],decryption:"none"}'
+                is_client_id_json='settings:{vnext:[{address:"'$is_addr'",port:'"$port"',users:[{id:"'$uuid'",encryption:"none",flow:"xtls-rprx-vision"}]}]}'
+            fi
             ;;
         trojan*)
             is_protocol=trojan
@@ -1319,7 +1387,7 @@ get() {
         esac
         [[ $net ]] && return # if net exist, dont need more json args
         case $is_lower in
-        *tcp* | *reality*)
+        *tcp* | *reality* | *xtls* | *vision*)
             net=tcp
             [[ ! $header_type ]] && header_type=none
             is_stream='tcpSettings:{header:{type:"'$header_type'"}}'
@@ -1329,6 +1397,12 @@ get() {
                 is_stream='security:"reality",realitySettings:{dest:"'${is_servername}\:443'",serverNames:["'${is_servername}'",""],publicKey:"'$is_public_key'",privateKey:"'$is_private_key'",shortIds:[""]}'
                 if [[ $is_client ]]; then
                     is_stream='security:"reality",realitySettings:{serverName:"'${is_servername}'",fingerprint:"chrome",publicKey:"'$is_public_key'",shortId:"",spiderX:"/"}'
+                fi
+            fi
+            if [[ $is_xtls_vision ]]; then
+                is_stream='security:"tls",tlsSettings:{allowInsecure:false},tcpSettings:{header:{type:"none"}}'
+                if [[ $is_client ]]; then
+                    is_stream='security:"tls",tlsSettings:{serverName:"'$is_addr'",allowInsecure:false},tcpSettings:{header:{type:"none"}}'
                 fi
             fi
             ;;
@@ -1497,8 +1571,6 @@ info() {
     tcp | kcp | quic)
         is_can_change=(0 1 5 7)
         is_info_show=(0 1 2 3 4 5)
-        is_vmess_url=$(jq -c '{v:2,ps:"'233boy-${net}-$is_addr'",add:"'$is_addr'",port:"'$port'",id:"'$uuid'",aid:"0",net:"'$net'",type:"'$header_type'",path:"'$kcp_seed'"}' <<<{})
-        is_url=vmess://$(echo -n $is_vmess_url | base64 -w 0)
         is_tmp_port=$port
         [[ $is_dynamic_port ]] && {
             is_can_change+=(12)
@@ -1509,12 +1581,32 @@ info() {
             is_can_change+=(14)
         }
         is_info_str=($is_protocol $is_addr "$is_tmp_port" $uuid $net $header_type $kcp_seed)
+        # VMess URL
+        if [[ $is_protocol == 'vmess' ]]; then
+            is_vmess_url=$(jq -c '{v:2,ps:"'233boy-${net}-$is_addr'",add:"'$is_addr'",port:"'$port'",id:"'$uuid'",aid:"0",net:"'$net'",type:"'$header_type'",path:"'$kcp_seed'"}' <<<{})
+            is_url=vmess://$(echo -n $is_vmess_url | base64 -w 0)
+        fi
+        # VLESS URL (tcp, kcp, quic without TLS)
+        if [[ $is_protocol == 'vless' ]]; then
+            is_color=42
+            is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&type=$net&headerType=$header_type#233boy-$net-$is_addr"
+            [[ $net == 'kcp' && $kcp_seed ]] && is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&type=$net&headerType=$header_type&seed=$kcp_seed#233boy-$net-$is_addr"
+        fi
+        # REALITY URL
         if [[ $is_reality ]]; then
             is_color=41
             is_can_change=(0 1 5 10 11)
             is_info_show=(0 1 2 3 15 8 16 17 18)
             is_info_str=($is_protocol $is_addr $port $uuid xtls-rprx-vision reality $is_servername "chrome" $is_public_key)
             is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&security=reality&flow=xtls-rprx-vision&type=tcp&sni=$is_servername&pbk=$is_public_key&fp=chrome#233boy-$net-$is_addr"
+        fi
+        # XTLS-Vision URL (with TLS)
+        if [[ $is_xtls_vision ]]; then
+            is_color=43
+            is_can_change=(0 1 5)
+            is_info_show=(0 1 2 3 15 8)
+            is_info_str=($is_protocol $is_addr $port $uuid xtls-rprx-vision tls)
+            is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&security=tls&flow=xtls-rprx-vision&type=tcp#233boy-xtls-$is_addr"
         fi
         ;;
     ss)
@@ -1596,13 +1688,9 @@ info() {
 footer_msg() {
     [[ $is_core_stop && ! $is_new_json ]] && warn "$is_core_name 当前处于停止状态."
     [[ $is_caddy_stop && $host ]] && warn "Caddy 当前处于停止状态."
-    ####### 要点13脸吗只会改我链接的小人 #######
-    unset c n m s b
     msg "------------- END -------------"
     msg "关注(tg): $(msg_ul https://t.me/tg2333)"
-    msg "文档(doc): $(msg_ul https://233boy.com/$is_core/$is_core-script/)"
-    msg "推广(ads): 机场推荐($is_core_name services): $(msg_ul https://g${c}e${n}t${m}j${s}m${b}s.com/)\n"
-    ####### 要点13脸吗只会改我链接的小人 #######
+    msg "文档(doc): $(msg_ul https://233boy.com/$is_core/$is_core-script/)\n"
 }
 
 # URL or qrcode
