@@ -58,6 +58,10 @@ _wget() {
     wget --no-check-certificate "$@"
 }
 
+_curl() {
+    curl -fsSL "$@"
+}
+
 # yum or apt-get
 cmd=$(type -P apt-get || type -P yum)
 
@@ -86,7 +90,7 @@ is_log_dir=/var/log/$is_core
 is_sh_bin=/usr/local/bin/$is_core
 is_sh_dir=$is_core_dir/sh
 is_sh_repo=$author/$is_core
-is_pkg="wget unzip jq qrencode"
+is_pkg="wget curl unzip jq qrencode"
 is_config_json=$is_core_dir/config.json
 is_caddy_bin=/usr/local/bin/caddy
 is_caddy_dir=/etc/caddy

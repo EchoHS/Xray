@@ -45,6 +45,7 @@ cmd=$(type -P apt-get || type -P yum)
 
 # wget installed or none
 is_wget=$(type -P wget)
+is_curl=$(type -P curl)
 
 # x64
 case $(uname -m) in
@@ -71,7 +72,7 @@ is_log_dir=/var/log/$is_core
 is_sh_bin=/usr/local/bin/$is_core
 is_sh_dir=$is_core_dir/sh
 is_sh_repo=$author/$is_core
-is_pkg="wget unzip"
+is_pkg="wget curl unzip"
 is_config_json=$is_core_dir/config.json
 tmp_var_lists=(
     tmpcore
@@ -102,7 +103,13 @@ load() {
 # wget add --no-check-certificate
 _wget() {
     [[ $proxy ]] && export https_proxy=$proxy
-    wget --no-check-certificate $*
+    wget --no-check-certificate "$@"
+}
+
+# curl wrapper
+_curl() {
+    [[ $proxy ]] && export https_proxy=$proxy
+    curl -fsSL --connect-timeout 15 --retry 3 --retry-delay 1 "$@"
 }
 
 # print a mesage
@@ -182,15 +189,28 @@ download() {
     esac
 
     msg warn "下载 ${name} > ${link}"
-    if _wget -t 3 -q -c $link -O $tmpfile; then
-        mv -f $tmpfile $is_ok
+    rm -f "$tmpfile"
+
+    if [[ $is_wget ]] && _wget -t 3 -q "$link" -O "$tmpfile"; then
+        [[ -s $tmpfile ]] && mv -f "$tmpfile" "$is_ok" && return
+    fi
+
+    rm -f "$tmpfile"
+    if [[ $is_curl ]] && _curl "$link" -o "$tmpfile"; then
+        [[ -s $tmpfile ]] && mv -f "$tmpfile" "$is_ok" && return
     fi
 }
 
 # get server ip
 get_ip() {
-    export "$(_wget -4 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
-    [[ -z $ip ]] && export "$(_wget -6 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
+    [[ $is_wget ]] && {
+        export "$(_wget -4 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
+        [[ -z $ip ]] && export "$(_wget -6 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
+    }
+    [[ -z $ip && $is_curl ]] && {
+        export "$(_curl -4 https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
+        [[ -z $ip ]] && export "$(_curl -6 https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
+    }
 }
 
 # check background tasks status
@@ -203,7 +223,7 @@ check_status() {
     }
 
     # download file status
-    if [[ $is_wget ]]; then
+    if [[ $is_wget || $is_curl ]]; then
         [[ ! -f $is_core_ok ]] && {
             msg err "下载 ${is_core_name} 失败"
             is_fail=1
@@ -218,7 +238,13 @@ check_status() {
         }
     else
         [[ ! $is_fail ]] && {
-            is_wget=1
+            is_wget=$(type -P wget)
+            is_curl=$(type -P curl)
+            [[ ! $is_wget && ! $is_curl ]] && {
+                msg err "wget/curl not found"
+                is_fail=1
+            }
+            [[ $is_fail ]] && return
             [[ ! $is_core_file ]] && download core &
             [[ ! $local_install ]] && download sh &
             [[ $jq_not_found ]] && download jq &
@@ -335,7 +361,9 @@ main() {
     }
 
     # install dependent pkg
-    install_pkg $is_pkg &
+    install_pkg $is_pkg
+    is_wget=$(type -P wget)
+    is_curl=$(type -P curl)
 
     # jq
     if [[ $(type -P jq) ]]; then
@@ -343,8 +371,8 @@ main() {
     else
         jq_not_found=1
     fi
-    # if wget installed. download core, sh, jq, get ip
-    [[ $is_wget ]] && {
+    # if wget/curl installed. download core, sh, jq, get ip
+    [[ $is_wget || $is_curl ]] && {
         [[ ! $is_core_file ]] && download core &
         [[ ! $local_install ]] && download sh &
         [[ $jq_not_found ]] && download jq &

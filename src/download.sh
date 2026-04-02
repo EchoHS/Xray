@@ -13,7 +13,8 @@ get_latest_version() {
         url="https://api.github.com/repos/$is_caddy_repo/releases/latest?v=$RANDOM"
         ;;
     esac
-    latest_ver=$(_wget -qO- $url | grep tag_name | grep -E -o 'v([0-9.]+)')
+    latest_ver=$(_wget -qO- "$url" 2>/dev/null | grep tag_name | grep -E -o 'v([0-9.]+)')
+    [[ ! $latest_ver && $(type -P curl) ]] && latest_ver=$(_curl "$url" | grep tag_name | grep -E -o 'v([0-9.]+)')
     [[ ! $latest_ver ]] && {
         err "获取 ${name} 最新版本失败."
     }
@@ -75,7 +76,12 @@ download() {
     unset latest_ver
 }
 download_file() {
-    if ! _wget -t 5 -c $link -O $tmpfile; then
+    rm -f "$tmpfile"
+    if ! _wget -t 5 "$link" -O "$tmpfile" || [[ ! -s $tmpfile ]]; then
+        rm -f "$tmpfile"
+        if [[ $(type -P curl) ]] && _curl --connect-timeout 15 --retry 5 --retry-delay 1 "$link" -o "$tmpfile" && [[ -s $tmpfile ]]; then
+            return
+        fi
         rm -rf $tmpdir
         err "\n下载 ${name} 失败.\n"
     fi
