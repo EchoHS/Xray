@@ -24,11 +24,7 @@ download() {
     latest_ver=$2
     [[ ! $latest_ver && $1 != 'dat' ]] && get_latest_version $1
     # tmp dir
-    tmpdir=$(mktemp -u)
-    [[ ! $tmpdir ]] && {
-        tmpdir=/tmp/tmp-$RANDOM
-    }
-    mkdir -p $tmpdir
+    make_tmpdir || err "create temp dir failed: $tmpdir"
     case $1 in
     core)
         name=$is_core_name
@@ -82,6 +78,8 @@ download_file() {
         if [[ $(type -P curl) ]] && _curl --connect-timeout 15 --retry 5 --retry-delay 1 "$link" -o "$tmpfile" && [[ -s $tmpfile ]]; then
             return
         fi
+        avail_kb=$(df -Pk "$tmpdir" 2>/dev/null | awk 'NR==2 {print $4}')
+        [[ $avail_kb =~ ^[0-9]+$ && $avail_kb -lt 20480 ]] && err "\ntemp dir low disk space: $tmpdir\n"
         rm -rf $tmpdir
         err "\n下载 ${name} 失败.\n"
     fi

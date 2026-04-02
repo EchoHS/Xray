@@ -62,6 +62,42 @@ _curl() {
     curl -fsSL "$@"
 }
 
+_tmp_has_space() {
+    local base=$1
+    local need_kb=${2:-81920}
+    local avail
+    avail=$(df -Pk "$base" 2>/dev/null | awk 'NR==2 {print $4}')
+    [[ $avail =~ ^[0-9]+$ && $avail -ge $need_kb ]]
+}
+
+make_tmpdir() {
+    local base
+    local new_tmp
+    local tmp_candidates=()
+    [[ $TMPDIR ]] && tmp_candidates+=("$TMPDIR")
+    tmp_candidates+=(/var/tmp /tmp /root)
+
+    for base in "${tmp_candidates[@]}"; do
+        [[ -d $base && -w $base ]] || continue
+        _tmp_has_space "$base" 81920 || continue
+        new_tmp=$(mktemp -d "$base/xray-script.XXXXXX" 2>/dev/null)
+        [[ $new_tmp ]] && {
+            tmpdir=$new_tmp
+            return 0
+        }
+    done
+
+    new_tmp=$(mktemp -d /tmp/xray-script.XXXXXX 2>/dev/null)
+    [[ $new_tmp ]] && {
+        tmpdir=$new_tmp
+        return 0
+    }
+
+    tmpdir=/tmp/xray-script-$RANDOM
+    mkdir -p "$tmpdir" 2>/dev/null
+    [[ -d $tmpdir ]]
+}
+
 # yum or apt-get
 cmd=$(type -P apt-get || type -P yum)
 

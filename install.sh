@@ -84,11 +84,44 @@ tmp_var_lists=(
     is_pkg_ok
 )
 
-# tmp dir
-tmpdir=$(mktemp -u)
-[[ ! $tmpdir ]] && {
-    tmpdir=/tmp/tmp-$RANDOM
+# check disk space (KB)
+_tmp_has_space() {
+    local base=$1
+    local need_kb=${2:-81920}
+    local avail
+    avail=$(df -Pk "$base" 2>/dev/null | awk 'NR==2 {print $4}')
+    [[ $avail =~ ^[0-9]+$ && $avail -ge $need_kb ]]
 }
+
+# create tmp dir, prefer larger partitions over /tmp
+make_tmpdir() {
+    local base
+    local new_tmp
+    local tmp_candidates=()
+    [[ $TMPDIR ]] && tmp_candidates+=("$TMPDIR")
+    tmp_candidates+=(/var/tmp /tmp /root)
+
+    for base in "${tmp_candidates[@]}"; do
+        [[ -d $base && -w $base ]] || continue
+        _tmp_has_space "$base" 81920 || continue
+        new_tmp=$(mktemp -d "$base/xray-install.XXXXXX" 2>/dev/null)
+        [[ $new_tmp ]] && {
+            tmpdir=$new_tmp
+            return
+        }
+    done
+
+    new_tmp=$(mktemp -d /tmp/xray-install.XXXXXX 2>/dev/null)
+    [[ $new_tmp ]] && {
+        tmpdir=$new_tmp
+        return
+    }
+
+    tmpdir=/tmp/xray-install-$RANDOM
+}
+
+# tmp dir
+make_tmpdir
 
 # set up var
 for i in ${tmp_var_lists[*]}; do
@@ -199,6 +232,10 @@ download() {
     if [[ $is_curl ]] && _curl "$link" -o "$tmpfile"; then
         [[ -s $tmpfile ]] && mv -f "$tmpfile" "$is_ok" && return
     fi
+
+    local avail_kb
+    avail_kb=$(df -Pk "$tmpdir" 2>/dev/null | awk 'NR==2 {print $4}')
+    [[ $avail_kb =~ ^[0-9]+$ && $avail_kb -lt 20480 ]] && msg err "temp dir low disk space: $tmpdir"
 }
 
 # get server ip
@@ -255,6 +292,10 @@ check_status() {
     fi
 
     # found fail status, remove tmp dir and exit.
+    [[ ! -d $tmpdir ]] && {
+        msg err "temp dir create failed: $tmpdir"
+        is_fail=1
+    }
     [[ $is_fail ]] && {
         exit_and_del_tmpdir
     }
@@ -343,7 +384,7 @@ main() {
     [[ $is_core_ver ]] && msg warn "${is_core_name} 版本: ${yellow}$is_core_ver${none}"
     [[ $proxy ]] && msg warn "使用代理: ${yellow}$proxy${none}"
     # create tmpdir
-    mkdir -p $tmpdir
+    mkdir -p "$tmpdir"
     # if is_core_file, copy file
     [[ $is_core_file ]] && {
         cp -f $is_core_file $is_core_ok
