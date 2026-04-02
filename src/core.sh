@@ -394,6 +394,8 @@ create() {
             is_inbounds='inbounds:[{port:2333,listen:"127.0.0.1",protocol:"socks",settings:{udp:true},sniffing:{enabled:true,destOverride:["http","tls"]}}]'
             is_outbounds='outbounds:[{tag:"'$is_config_name'",protocol:"'$is_protocol'",'"$is_client_id_json"','"$is_stream"'},{tag:"direct",protocol:"freedom"}]'
             is_new_json=$(jq '{'$is_dns,$is_route,$is_inbounds,$is_outbounds'}' <<<{})
+        elif [[ $is_only_outbound ]]; then
+            is_new_json=$(jq '.outbounds[0]' <<<"$is_new_json")
         fi
         msg
         jq <<<$is_new_json
@@ -1869,8 +1871,9 @@ main() {
     c | config | change)
         change ${@:2}
         ;;
-    client | genc)
+    client | genc | ob | outbound)
         [[ $1 == 'client' ]] && is_full_client=1
+        [[ $1 == 'ob' || $1 == 'outbound' ]] && is_only_outbound=1
         create client $2
         ;;
     d | del | rm)

@@ -59,6 +59,7 @@ show_help() {
             "   debug [name]                                    显示一些 debug 信息, 仅供参考"
             "   gen [...]                                       同等于 add, 但只显示 JSON 内容, 不创建文件, 测试使用"
             "   genc [name]                                     显示用于客户端部分 JSON, 仅供参考"
+            "   ob [name]                                       显示节点配置 JSON格式"
             "   no-auto-tls [...]                               同等于 add, 但禁止自动配置 TLS, 可用于 *TLS 相关协议"
             "   xapi [...]                                      同等于 $is_core api, 但 API 后端使用当前运行的 $is_core_name 服务\n"
             "其他:"
@@ -79,7 +80,6 @@ show_help() {
 }
 
 about() {
-    ####### 要点13脸吗只会改我链接的小人 #######
     unset c n m s b
     msg
     msg "网站: $(msg_ul https://233boy.com)"
@@ -90,5 +90,4 @@ about() {
     msg "$is_core_name site: $(msg_ul https://xtls.github.io)"
     msg "$is_core_name core: $(msg_ul https://github.com/${is_core_repo})"
     msg
-    ####### 要点13脸吗只会改我链接的小人 #######
 }
