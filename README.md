@@ -16,6 +16,7 @@
 - 强大的快捷参数
 - 支持所有常用协议
 - 一键添加 VLESS-REALITY (默认)
+- 一键添加 VLESS-mlkem768x25519plus（可选 XTLS Vision，均不使用 TLS/REALITY）
 - 一键添加 Shadowsocks 2022
 - 一键添加 VMess-(TCP/mKCP)
 - 一键添加 VMess-(WS/gRPC)-TLS

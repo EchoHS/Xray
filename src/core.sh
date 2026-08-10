@@ -17,6 +17,8 @@ protocol_list=(
     VLESS-XHTTP-TLS
     VLESS-REALITY
     VLESS-XTLS-Vision
+    VLESS-mlkem768x25519plus
+    VLESS-mlkem768x25519plus-XTLS-Vision
     Trojan-TCP-TLS
     Trojan-H2-TLS
     Trojan-WS-TLS
@@ -157,6 +159,28 @@ get_pbk() {
     is_tmp_pbk=($($is_core_bin x25519 | sed 's/.*://'))
     is_private_key=${is_tmp_pbk[0]}
     is_public_key=${is_tmp_pbk[1]}
+}
+
+# Generate or restore the ML-KEM-768 authentication key pair used by VLESS Encryption.
+get_vless_encryption() {
+    local is_vless_seed
+    local is_vless_key_output
+
+    if [[ $vless_decryption ]]; then
+        is_vless_seed=${vless_decryption##*.}
+        is_vless_key_output=$($is_core_bin mlkem768 -i "$is_vless_seed" 2>/dev/null)
+    else
+        is_vless_key_output=$($is_core_bin mlkem768 2>/dev/null)
+        is_vless_seed=$(sed -n 's/^Seed: *//p' <<<"$is_vless_key_output")
+    fi
+    vless_encryption_key=$(sed -n 's/^Client: *//p' <<<"$is_vless_key_output")
+
+    [[ ! $is_vless_seed || ! $vless_encryption_key ]] && {
+        err "无法生成 VLESS mlkem768x25519plus 密钥，请更新 Xray-core 后重试."
+    }
+
+    [[ ! $vless_decryption ]] && vless_decryption="mlkem768x25519plus.native.600s.$is_vless_seed"
+    vless_encryption="mlkem768x25519plus.native.0rtt.$vless_encryption_key"
 }
 
 show_list() {
@@ -510,6 +534,10 @@ change() {
     is_old_net=$net
     [[ $host ]] && net=$is_protocol-$net-tls
     [[ $is_reality ]] && net=reality
+    if [[ $is_mlkem ]]; then
+        net=mlkem
+        [[ $is_mlkem_vision ]] && net=mlkem-vision
+    fi
     [[ $is_dynamic_port ]] && net=${net}d
     [[ $3 == 'auto' ]] && is_auto=1
     # if is_dont_show_info exist, cant show info.
@@ -918,6 +946,12 @@ add() {
         xtls | vision)
             is_new_protocol=VLESS-XTLS-Vision
             ;;
+        mlkem | mlkem768x25519plus)
+            is_new_protocol=VLESS-mlkem768x25519plus
+            ;;
+        mlkem-vision | mlkem768x25519plus-vision)
+            is_new_protocol=VLESS-mlkem768x25519plus-XTLS-Vision
+            ;;
         # 通用 TLS 传输 (ws, grpc, xhttp)
         ws | grpc | vws | vgrpc | tws | tgrpc)
             is_new_protocol=$(sed -E "s/^V/VLESS-/;s/^T/Trojan-/;/^(W|H|G)/{s/^/VMess-/};s/G/g/" <<<${is_lower^^})-TLS
@@ -981,6 +1015,15 @@ add() {
         ;;
     vless-xtls-vision)
         is_xtls_vision=1
+        unset is_mlkem is_mlkem_vision vless_decryption vless_encryption vless_encryption_key
+        is_use_port=$2
+        is_use_uuid=$3
+        is_add_opts="[port] [uuid]"
+        ;;
+    vless-mlkem768x25519plus | vless-mlkem768x25519plus-xtls-vision)
+        is_mlkem=1
+        unset is_mlkem_vision is_xtls_vision
+        [[ $(grep -i xtls-vision <<<$is_new_protocol) ]] && is_mlkem_vision=1
         is_use_port=$2
         is_use_uuid=$3
         is_add_opts="[port] [uuid]"
@@ -1074,6 +1117,7 @@ add() {
 
         [[ ! $(is_test uuid $uuid) ]] && uuid=
         [[ ! $(grep -i reality <<<$is_new_protocol) ]] && is_reality=
+        [[ ! $(grep -i mlkem768x25519plus <<<$is_new_protocol) ]] && unset is_mlkem is_mlkem_vision vless_decryption vless_encryption vless_encryption_key
     fi
 
     # no-auto-tls only use h2,ws,grpc
@@ -1271,12 +1315,15 @@ get() {
     info)
         get file $2
         if [[ $is_config_file ]]; then
+            unset is_mlkem is_mlkem_vision vless_decryption vless_encryption vless_encryption_key is_vless_flow
             is_json_str=$(cat $is_conf_dir/"$is_config_file")
             is_json_data_base=$(jq '.inbounds[0]|.protocol,.port,(.settings|(.clients[0]|.id,.password),.method,.password,.address,.port,.detour.to,(.accounts[0]|.user,.pass))' <<<$is_json_str)
             [[ $? != 0 ]] && err "无法读取此文件: $is_config_file"
             is_json_data_more=$(jq '.inbounds[0]|.streamSettings|.network,.tcpSettings.header.type,(.kcpSettings|.seed,.header.type),.quicSettings.header.type,.wsSettings.path,.httpSettings.path,.grpcSettings.serviceName,.xhttpSettings.path' <<<$is_json_str)
             is_json_data_host=$(jq '.inbounds[0]|.streamSettings|.grpc_host,.wsSettings.headers.Host,.httpSettings.host[0],.xhttpSettings.host' <<<$is_json_str)
             is_json_data_reality=$(jq '.inbounds[0]|.streamSettings|.security,(.realitySettings|.serverNames[0],.publicKey,.privateKey)' <<<$is_json_str)
+            vless_decryption=$(jq -r '.inbounds[0].settings.decryption // empty' <<<$is_json_str)
+            is_vless_flow=$(jq -r '.inbounds[0].settings.clients[0].flow // empty' <<<$is_json_str)
             is_up_var_set=(null is_protocol port uuid trojan_password ss_method ss_password door_addr door_port is_dynamic_port is_socks_user is_socks_pass net tcp_type kcp_seed kcp_type quic_type ws_path h2_path grpc_path xhttp_path grpc_host ws_host h2_host xhttp_host is_reality is_servername is_public_key is_private_key)
             [[ $is_debug ]] && msg "\n------------- debug: $is_config_file -------------"
             i=0
@@ -1303,6 +1350,13 @@ get() {
             else
                 is_reality=
             fi
+            if [[ $vless_decryption == mlkem768x25519plus.* ]]; then
+                is_mlkem=1
+                [[ $is_vless_flow == 'xtls-rprx-vision' ]] && is_mlkem_vision=1
+                get_vless_encryption
+            else
+                unset vless_decryption
+            fi
             [[ ! $kcp_seed ]] && is_no_kcp_seed=1
             is_config_name=$is_config_file
             if [[ $is_dynamic_port ]]; then
@@ -1318,7 +1372,12 @@ get() {
             fi
             [[ $is_tmp_https_port ]] && is_https_port=$is_tmp_https_port
             [[ $is_client && $host ]] && port=$is_https_port
-            get protocol $is_protocol-$net
+            is_info_protocol=$is_protocol-$net
+            if [[ $is_mlkem ]]; then
+                is_info_protocol=VLESS-mlkem768x25519plus
+                [[ $is_mlkem_vision ]] && is_info_protocol=VLESS-mlkem768x25519plus-XTLS-Vision
+            fi
+            get protocol $is_info_protocol
         fi
         ;;
     protocol)
@@ -1339,6 +1398,15 @@ get() {
             is_protocol=vless
             is_server_id_json='settings:{clients:[{id:"'$uuid'"}],decryption:"none"}'
             is_client_id_json='settings:{vnext:[{address:"'$is_addr'",port:'"$port"',users:[{id:"'$uuid'",encryption:"none"}]}]}'
+            if [[ $is_mlkem ]]; then
+                get_vless_encryption
+                is_server_id_json='settings:{clients:[{id:"'$uuid'"}],decryption:"'$vless_decryption'"}'
+                is_client_id_json='settings:{vnext:[{address:"'$is_addr'",port:'"$port"',users:[{id:"'$uuid'",encryption:"'$vless_encryption'"}]}]}'
+                if [[ $is_mlkem_vision ]]; then
+                    is_server_id_json='settings:{clients:[{id:"'$uuid'",flow:"xtls-rprx-vision"}],decryption:"'$vless_decryption'"}'
+                    is_client_id_json='settings:{vnext:[{address:"'$is_addr'",port:'"$port"',users:[{id:"'$uuid'",encryption:"'$vless_encryption'",flow:"xtls-rprx-vision"}]}]}'
+                fi
+            fi
             if [[ $is_reality ]]; then
                 is_server_id_json='settings:{clients:[{id:"'$uuid'",flow:"xtls-rprx-vision"}],decryption:"none"}'
                 is_client_id_json='settings:{vnext:[{address:"'$is_addr'",port:'"$port"',users:[{id:"'$uuid'",encryption:"none",flow:"xtls-rprx-vision"}]}]}'
@@ -1389,7 +1457,7 @@ get() {
         esac
         [[ $net ]] && return # if net exist, dont need more json args
         case $is_lower in
-        *tcp* | *reality* | *xtls* | *vision*)
+        *tcp* | *reality* | *xtls* | *vision* | *mlkem*)
             net=tcp
             [[ ! $header_type ]] && header_type=none
             is_stream='tcpSettings:{header:{type:"'$header_type'"}}'
@@ -1593,6 +1661,22 @@ info() {
             is_color=42
             is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&type=$net&headerType=$header_type#233boy-$net-$is_addr"
             [[ $net == 'kcp' && $kcp_seed ]] && is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&type=$net&headerType=$header_type&seed=$kcp_seed#233boy-$net-$is_addr"
+        fi
+        # VLESS Encryption (raw TCP, without TLS or REALITY)
+        if [[ $is_mlkem ]]; then
+            is_color=46
+            is_can_change=(0 1 5)
+            is_info_show=(0 1 2 3 4 11 8)
+            is_info_str=($is_protocol $is_addr $port $uuid tcp $vless_encryption none)
+            is_mlkem_flow=
+            is_mlkem_name=mlkem768x25519plus
+            if [[ $is_mlkem_vision ]]; then
+                is_info_show=(0 1 2 3 4 15 11 8)
+                is_info_str=($is_protocol $is_addr $port $uuid tcp xtls-rprx-vision $vless_encryption none)
+                is_mlkem_flow='&flow=xtls-rprx-vision'
+                is_mlkem_name=mlkem768x25519plus-vision
+            fi
+            is_url="$is_protocol://$uuid@$is_addr:$port?encryption=$vless_encryption&security=none${is_mlkem_flow}&type=tcp&headerType=none#233boy-$is_mlkem_name-$is_addr"
         fi
         # REALITY URL
         if [[ $is_reality ]]; then
