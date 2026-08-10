@@ -48,6 +48,12 @@ xray add vless-mlkem768x25519plus <port> <uuid> <x25519_public_key> <x25519_priv
 
 公钥是导出到客户端的短 encryption 密钥，私钥保存在服务端；脚本会校验密钥对。客户端公钥无法单独用于创建服务端配置。
 
+原地转换现有节点并保留端口、UUID：
+
+```bash
+xray change <config.json> new vless-mlkem768x25519plus <x25519_public_key> <x25519_private_key>
+```
+
 脚本的参数非常高效率并且超级易用，请掌握参数的使用
 
 # 文档

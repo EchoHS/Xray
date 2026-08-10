@@ -565,7 +565,11 @@ change() {
     0)
         # new protocol
         is_set_new_protocol=1
-        add ${@:3}
+        if [[ ${3,,} == vless-mlkem768x25519plus || ${3,,} == vless-mlkem768x25519plus-xtls-vision ]] && [[ $4 || $5 ]]; then
+            add "$3" auto auto "$4" "$5"
+        else
+            add ${@:3}
+        fi
         ;;
     1)
         # new port
