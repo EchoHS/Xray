@@ -161,25 +161,36 @@ get_pbk() {
     is_public_key=${is_tmp_pbk[1]}
 }
 
-# Generate or restore the ML-KEM-768 authentication key pair used by VLESS Encryption.
+# Generate or restore the short X25519 authentication key pair used by VLESS Encryption.
 get_vless_encryption() {
-    local is_vless_seed
+    local is_vless_private_key
     local is_vless_key_output
 
     if [[ $vless_decryption ]]; then
-        is_vless_seed=${vless_decryption##*.}
-        is_vless_key_output=$($is_core_bin mlkem768 -i "$is_vless_seed" 2>/dev/null)
+        is_vless_private_key=${vless_decryption##*.}
+        is_vless_key_output=$($is_core_bin x25519 -i "$is_vless_private_key" 2>/dev/null)
+    elif [[ $is_use_vless_private_key ]]; then
+        is_vless_private_key=${is_use_vless_private_key##*.}
+        is_vless_key_output=$($is_core_bin x25519 -i "$is_vless_private_key" 2>/dev/null)
+    elif [[ $is_use_vless_encryption_key ]]; then
+        err "自定义 VLESS encryption 时必须同时提供配对的 X25519 私钥."
     else
-        is_vless_key_output=$($is_core_bin mlkem768 2>/dev/null)
-        is_vless_seed=$(sed -n 's/^Seed: *//p' <<<"$is_vless_key_output")
+        is_vless_key_output=$($is_core_bin x25519 2>/dev/null)
+        is_vless_private_key=$(sed -n 's/^PrivateKey: *//p' <<<"$is_vless_key_output")
     fi
-    vless_encryption_key=$(sed -n 's/^Client: *//p' <<<"$is_vless_key_output")
+    vless_encryption_key=$(sed -n 's/^Password (PublicKey): *//p' <<<"$is_vless_key_output")
 
-    [[ ! $is_vless_seed || ! $vless_encryption_key ]] && {
+    [[ ! $is_vless_private_key || ! $vless_encryption_key ]] && {
         err "无法生成 VLESS mlkem768x25519plus 密钥，请更新 Xray-core 后重试."
     }
+    if [[ $is_use_vless_encryption_key ]]; then
+        is_use_vless_encryption_key=${is_use_vless_encryption_key##*.}
+        [[ $is_use_vless_encryption_key != "$vless_encryption_key" ]] && {
+            err "自定义 VLESS encryption 公钥与私钥不匹配."
+        }
+    fi
 
-    [[ ! $vless_decryption ]] && vless_decryption="mlkem768x25519plus.native.600s.$is_vless_seed"
+    [[ ! $vless_decryption ]] && vless_decryption="mlkem768x25519plus.native.600s.$is_vless_private_key"
     vless_encryption="mlkem768x25519plus.native.0rtt.$vless_encryption_key"
 }
 
@@ -1026,7 +1037,9 @@ add() {
         [[ $(grep -i xtls-vision <<<$is_new_protocol) ]] && is_mlkem_vision=1
         is_use_port=$2
         is_use_uuid=$3
-        is_add_opts="[port] [uuid]"
+        is_use_vless_encryption_key=$4
+        is_use_vless_private_key=$5
+        is_add_opts="[port] [uuid] [x25519_public_key] [x25519_private_key]"
         ;;
     vless-tcp | vless-mkcp | vless-quic)
         is_use_port=$2
@@ -1117,7 +1130,7 @@ add() {
 
         [[ ! $(is_test uuid $uuid) ]] && uuid=
         [[ ! $(grep -i reality <<<$is_new_protocol) ]] && is_reality=
-        [[ ! $(grep -i mlkem768x25519plus <<<$is_new_protocol) ]] && unset is_mlkem is_mlkem_vision vless_decryption vless_encryption vless_encryption_key
+        [[ ! $(grep -i mlkem768x25519plus <<<$is_new_protocol) ]] && unset is_mlkem is_mlkem_vision vless_decryption vless_encryption vless_encryption_key is_use_vless_private_key is_use_vless_encryption_key
     fi
 
     # no-auto-tls only use h2,ws,grpc
@@ -1127,7 +1140,7 @@ add() {
 
     # prefer args.
     if [[ $2 ]]; then
-        for v in is_use_port is_use_uuid is_use_header_type is_use_host is_use_path is_use_pass is_use_method is_use_door_addr is_use_door_port is_use_dynamic_port_start is_use_dynamic_port_end; do
+        for v in is_use_port is_use_uuid is_use_header_type is_use_host is_use_path is_use_pass is_use_method is_use_door_addr is_use_door_port is_use_dynamic_port_start is_use_dynamic_port_end is_use_vless_private_key is_use_vless_encryption_key; do
             [[ ${!v} == 'auto' ]] && unset $v
         done
 
